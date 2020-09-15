@@ -4,15 +4,16 @@
 import sys
 
 
-def pktsniffer(file_name):
-    data = open(file_name, 'rb')
-    print(data)
+def pktsniffer(fileName):
+    with open(fileName, mode='rb') as file:
+        fileContent = file.read()
+        print(fileContent)
 
 def main():
     print("Hello world")
-    if len(sys.argv) >= 2:
-        pktsniffer(sys.argv[1])
+    if len(sys.argv) >= 3 and sys.argv[1] == "-r":
+        pktsniffer(sys.argv[2])
     else:
-        print("Usage: python pktsniffer packet_file");
+        print("Usage: python pktsniffer -r packet_file");
 
 main()
