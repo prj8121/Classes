@@ -3,8 +3,9 @@
 
 import sys
 import os
-import struct
 
+
+# I got this from the class discord
 def fileToByteArray(fileName):
     array = []
     with open('project1.pcap', "rb") as myFile:
@@ -15,6 +16,8 @@ def fileToByteArray(fileName):
     return array
 
 
+# num_to_read = number of packets to read
+# filterStuff = the command line args corresponding to the filter arguments
 def pktsniffer(fileName, num_to_read, filterStuff):
     arr = fileToByteArray(fileName)
     fileSize = os.path.getsize(fileName)
@@ -23,6 +26,8 @@ def pktsniffer(fileName, num_to_read, filterStuff):
     while indx < fileSize and num_to_read != 0:
         p_len, incr, p_str = packetHeader(arr, indx)
         indx += incr
+
+        # packet funciton does all the processing and gives back a string of what to print
         p_str, b_print = packet(arr, indx, p_len, p_str, filterStuff)
         if b_print:
             print(p_str)
@@ -31,19 +36,25 @@ def pktsniffer(fileName, num_to_read, filterStuff):
         #sys.exit()
     
 
+# Gets the packet length
 def packetHeader(arr, indx):
     incr = 16
     saved_len = arr[indx + 8 : indx + 12]
     saved_len.reverse()
     saved_len_num = int(''.join(saved_len),16)
+
+    # It didn't feel valid to call this part of the Ether header like
+    # the writeup does so I made it separate
     p_str = "PCAP: Packet size = " + str(saved_len_num) + " bytes\n"
     return saved_len_num, incr, p_str
     
-
+# returns the string representing the packet, and whether or not it should be printed
 def packet(arr, indx, p_len, p_str, filt):
     return etherHeader(arr, indx, p_str, filt)
 
 
+# Processes the ethernet header
+# returns the string representing the packet, and whether or not it should be printed
 def etherHeader(arr, indx, p_str, filt):
     p_str += "ETHER: ----- Ether Header -----\n"
     p_str += "ETHER:\n"
@@ -59,7 +70,8 @@ def etherHeader(arr, indx, p_str, filt):
         return p_str, 'ip' not in filt
     #sys.exit()
     
-
+# Processes the IP header
+# returns the string representing the packet, and whether or not it should be printed
 def ipHeader(arr, indx, p_str, b_print, filt):
     p_str += "IP: ----- IP Header -----\n"
     p_str += "IP:\n"
@@ -121,12 +133,13 @@ def ipHeader(arr, indx, p_str, b_print, filt):
     p_str += "IP:\n"
 
 
-
+    # Filtering
     if 'host' in filt:
         host_indx = filt.index('host')
         if filt[host_indx +1] not in [src, dst, srcForFilt, dstForFilt]:
             b_print = False
 
+    # Filtering
     if 'net' in filt:
         net_indx = filt.index('net')
         srcTup = tuple(int(k, 16) for k in arr[indx+12:indx+16])
@@ -152,7 +165,8 @@ def ipHeader(arr, indx, p_str, b_print, filt):
         return p_str, b_print
 
     
-
+#Processes the TCP header
+# returns the string representing the packet, and whether or not it should be printed
 def tcpHeader(arr, indx, p_str, b_print, filt):
     p_str += "TCP: ----- TCP Header -----\n"
     p_str += "TCP:\n"
@@ -209,7 +223,8 @@ def tcpHeader(arr, indx, p_str, b_print, filt):
     
     return p_str, b_print
 
-
+# Processes the ICMP header
+# returns the string representing the packet, and whether or not it should be printed
 def icmpHeader(arr, indx, p_str, b_print, filt):
     p_str += "ICMP: ----- ICMP Header -----\n"
     p_str += "ICMP:\n"
@@ -229,7 +244,8 @@ def icmpHeader(arr, indx, p_str, b_print, filt):
 
     return p_str, b_print
 
-
+# Processes the UDP header
+# returns the string representing the packet, and whether or not it should be printed
 def udpHeader(arr, indx, p_str, b_print, filt):
     p_str += "UDP: ----- UDP Header -----\n"
     p_str += "UDP:\n"
@@ -256,13 +272,6 @@ def udpHeader(arr, indx, p_str, b_print, filt):
     
     return p_str, b_print
     
-
-def b_arr_to_num(arr):
-    s = ""
-    for c in arr:
-        s += (c.decode('hex'))
-    return s        
-
 
 def main():
     aLen = len(sys.argv)
