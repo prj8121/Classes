@@ -15,18 +15,19 @@ def fileToByteArray(fileName):
     return array
 
 
-def pktsniffer(fileName):
+def pktsniffer(fileName, num_to_read, filterStuff):
     arr = fileToByteArray(fileName)
     fileSize = os.path.getsize(fileName)
     pcapGlobalHeaderLength = 24 # bytes
     indx = pcapGlobalHeaderLength
-    while indx < fileSize:
+    while indx < fileSize and num_to_read != 0:
         p_len, incr, p_str = packetHeader(arr, indx)
         indx += incr
-        p_str, b_print = packet(arr, indx, p_len, p_str)
+        p_str, b_print = packet(arr, indx, p_len, p_str, filterStuff)
         if b_print:
             print(p_str)
         indx += p_len
+        num_to_read -=1
         #sys.exit()
     
 
@@ -39,11 +40,11 @@ def packetHeader(arr, indx):
     return saved_len_num, incr, p_str
     
 
-def packet(arr, indx, p_len, p_str):
-    return etherHeader(arr, indx, p_str)
+def packet(arr, indx, p_len, p_str, filt):
+    return etherHeader(arr, indx, p_str, filt)
 
 
-def etherHeader(arr, indx, p_str):
+def etherHeader(arr, indx, p_str, filt):
     p_str += "ETHER: ----- Ether Header -----\n"
     p_str += "ETHER:\n"
     p_str += "ETHER: Destination = " + ':'.join(arr[indx:indx+6]) + ",\n"
@@ -53,13 +54,13 @@ def etherHeader(arr, indx, p_str):
     p_str += "ETHER:\n"
     b_print = True
     if etherType == "0800":
-        return ipHeader(arr, indx+14, p_str, b_print)
+        return ipHeader(arr, indx+14, p_str, b_print, filt)
     else:
-        return p_str, b_print
+        return p_str, 'ip' not in filt
     #sys.exit()
     
 
-def ipHeader(arr, indx, p_str, b_print):
+def ipHeader(arr, indx, p_str, b_print, filt):
     p_str += "IP: ----- IP Header -----\n"
     p_str += "IP:\n"
     
@@ -105,9 +106,11 @@ def ipHeader(arr, indx, p_str, b_print):
     p_str += "IP: Header checksum = " + headerChecksum + "\n"
 
     src = '.'.join([str(k) for k in arr[indx+12:indx+16]])
+    srcForFilt = '.'.join([str(int(k, 16)) for k in arr[indx+12:indx+16]])
     p_str += "IP: Source address = " + src + "\n"
 
     dst = '.'.join([str(k) for k in arr[indx+16:indx+20]])
+    dstForFilt = '.'.join([str(int(k, 16)) for k in arr[indx+16:indx+20]])
     p_str += "IP: Destination address = " + dst + "\n"
 
     if IHL == 5:
@@ -116,19 +119,41 @@ def ipHeader(arr, indx, p_str, b_print):
         p_str += "IP: There are options\n"
 
     p_str += "IP:\n"
-        
+
+
+
+    if 'host' in filt:
+        host_indx = filt.index('host')
+        if filt[host_indx +1] not in [src, dst, srcForFilt, dstForFilt]:
+            b_print = False
+
+    if 'net' in filt:
+        net_indx = filt.index('net')
+        srcTup = tuple(int(k, 16) for k in arr[indx+12:indx+16])
+        dstTup = tuple(int(k, 16) for k in arr[indx+16:indx+20])
+        filtTup = tuple(int(k) for k in filt[net_indx + 1].split("."))
+        if dstTup < filtTup and srcTup < filtTup:
+            b_print = False
+    
+    
     if protocol == 17:
-        return udpHeader(arr, indx + (IHL*4), p_str, b_print)
+        if 'tcp' in filt or 'icmp' in filt:
+            b_print = False
+        return udpHeader(arr, indx + (IHL*4), p_str, b_print, filt)
     elif protocol == 1:
-        return icmpHeader(arr, indx + (IHL*4), p_str, b_print)
+        if 'port' in filt or 'udp' in filt or 'tcp' in filt:
+            b_print = False
+        return icmpHeader(arr, indx + (IHL*4), p_str, b_print, filt)
     elif protocol == 6:
-        return tcpHeader(arr, indx + (IHL*4), p_str, b_print)
+        if 'udp' in filt or 'icmp' in filt:
+            b_print = False
+        return tcpHeader(arr, indx + (IHL*4), p_str, b_print, filt)
     else:
         return p_str, b_print
 
     
 
-def tcpHeader(arr, indx, p_str, b_print):
+def tcpHeader(arr, indx, p_str, b_print, filt):
     p_str += "TCP: ----- TCP Header -----\n"
     p_str += "TCP:\n"
 
@@ -176,10 +201,16 @@ def tcpHeader(arr, indx, p_str, b_print):
     
     p_str += "TCP:\n"
 
+
+    if 'port' in filt:
+        if int(filt[filt.index('port')+1]) not in [sPort, dPort]:
+            b_print = False
+            
+    
     return p_str, b_print
 
 
-def icmpHeader(arr, indx, p_str, b_print):
+def icmpHeader(arr, indx, p_str, b_print, filt):
     p_str += "ICMP: ----- ICMP Header -----\n"
     p_str += "ICMP:\n"
 
@@ -190,7 +221,7 @@ def icmpHeader(arr, indx, p_str, b_print):
     p_str += "ICMP: Code = " + str(code) + "\n"
 
     checksum = ''.join(arr[indx+2: indx+4])
-    p_str += "ICMP: Code = " + checksum + "\n"
+    p_str += "ICMP: Checksum = " + checksum + "\n"
 
     # Rest of header depends on type and code
     
@@ -199,7 +230,7 @@ def icmpHeader(arr, indx, p_str, b_print):
     return p_str, b_print
 
 
-def udpHeader(arr, indx, p_str, b_print):
+def udpHeader(arr, indx, p_str, b_print, filt):
     p_str += "UDP: ----- UDP Header -----\n"
     p_str += "UDP:\n"
     
@@ -218,6 +249,11 @@ def udpHeader(arr, indx, p_str, b_print):
     
     p_str += "UDP:\n"
 
+
+    if 'port' in filt:
+        if int(filt[filt.index('port')+1]) not in [srcPort, dstPort]:
+            b_print = False
+    
     return p_str, b_print
     
 
@@ -229,8 +265,17 @@ def b_arr_to_num(arr):
 
 
 def main():
-    if len(sys.argv) >= 3 and sys.argv[1] == "-r":
-        pktsniffer(sys.argv[2])
+    aLen = len(sys.argv)
+    num = -1
+    filterStuff = []
+    if aLen >= 3 and sys.argv[1] == "-r":
+        if aLen >= 5 and sys.argv[3] == "-c":
+            num = int(sys.argv[4])
+            filterStuff = sys.argv[5:aLen]
+        else:
+            filterStuff = sys.argv[3:aLen]
+        pktsniffer(sys.argv[2], num, filterStuff)
+            
     else:
         print("Usage: python pktsniffer -r file");
 
